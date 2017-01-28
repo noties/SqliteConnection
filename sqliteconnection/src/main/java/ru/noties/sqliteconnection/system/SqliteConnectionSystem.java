@@ -56,6 +56,27 @@ class SqliteConnectionSystem extends SqliteConnectionBase {
         return new InsertImpl(sql);
     }
 
+    @Override
+    public void beginTransaction() {
+        mDatabase.beginTransaction();
+    }
+
+    @Override
+    public void commitTransaction() {
+        mDatabase.setTransactionSuccessful();
+        mDatabase.endTransaction();
+    }
+
+    @Override
+    public void rollbackTransaction() {
+        mDatabase.endTransaction();
+    }
+
+    @Override
+    public boolean inTransaction() {
+        return mDatabase.inTransaction();
+    }
+
     private SQLiteStatement compileStatement(String sql, Object[] args) {
         final SQLiteStatement statement = mDatabase.compileStatement(sql);
         bindAll(statement, args);

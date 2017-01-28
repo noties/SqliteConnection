@@ -325,7 +325,7 @@ public abstract class SqliteConnectionTestBase {
         mConnection.execute("create table " + table + "(oid integer primary key, name text not null);");
         assertTrue(tableExists(mConnection, table));
 
-        final Transaction transaction = Transaction.begin(mConnection);
+        mConnection.beginTransaction();
 
         mConnection
                 .insert("insert into ${table}(oid, name) values (?{oid}, ?{name});")
@@ -351,7 +351,7 @@ public abstract class SqliteConnectionTestBase {
         }
 
         // after commit nothing should change, we do another check if data is still present
-        transaction.commit();
+        mConnection.commitTransaction();
 
         // second check
         {
@@ -382,7 +382,7 @@ public abstract class SqliteConnectionTestBase {
         mConnection.execute("create table " + table + "(oid integer primary key, name text not null);");
         assertTrue(tableExists(mConnection, table));
 
-        final Transaction transaction = Transaction.begin(mConnection);
+        mConnection.beginTransaction();
 
         mConnection
                 .insert("insert into ${table}(oid, name) values (?{oid}, ?{name});")
@@ -407,7 +407,7 @@ public abstract class SqliteConnectionTestBase {
             }
         }
 
-        transaction.rollback();
+        mConnection.rollbackTransaction();
 
         // second check, should fail
         {
@@ -434,7 +434,26 @@ public abstract class SqliteConnectionTestBase {
         }
 
         mConnection.close();
+    }
 
+    @Test
+    public void inTransactionCommit() {
+        assertFalse(mConnection.inTransaction());
+        mConnection.beginTransaction();
+        assertTrue(mConnection.inTransaction());
+        mConnection.commitTransaction();
+        assertFalse(mConnection.inTransaction());
+        mConnection.close();
+    }
+
+    @Test
+    public void inTransactionRollback() {
+        assertFalse(mConnection.inTransaction());
+        mConnection.beginTransaction();
+        assertTrue(mConnection.inTransaction());
+        mConnection.rollbackTransaction();
+        assertFalse(mConnection.inTransaction());
+        mConnection.close();
     }
 
     @Test

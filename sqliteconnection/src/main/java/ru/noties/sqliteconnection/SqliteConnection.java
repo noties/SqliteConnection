@@ -18,6 +18,12 @@ public interface SqliteConnection extends Closeable {
     StatementUpdate update(@NonNull String sql);
     StatementInsert insert(@NonNull String sql);
 
+    void beginTransaction();
+    void commitTransaction();
+    void rollbackTransaction();
+
+    boolean inTransaction();
+
     @Override
     void close();
     boolean isClosed();
