@@ -1,0 +1,7 @@
+<manifest
+    package="ru.noties.sqliteconnection"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-sdk tools:overrideLibrary="org.sqlite.database"/>
+
+</manifest>
