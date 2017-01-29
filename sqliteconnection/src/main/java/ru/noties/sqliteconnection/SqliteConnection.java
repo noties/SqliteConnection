@@ -7,8 +7,8 @@ import java.io.Closeable;
 public interface SqliteConnection extends Closeable {
 
     abstract class StateObserver {
-        public void onExecute   (SqliteConnection connection, String sql, Object[] bindArgs) {}
-        public void onClosed    (SqliteConnection connection) {}
+        public void onExecute(SqliteConnection connection, String sql, Object[] bindArgs) {}
+        public void onClosed(SqliteConnection connection) {}
     }
 
     void execute(@NonNull String sql, Object... args);
@@ -18,11 +18,17 @@ public interface SqliteConnection extends Closeable {
     StatementUpdate update(@NonNull String sql);
     StatementInsert insert(@NonNull String sql);
 
+
     void beginTransaction();
-    void commitTransaction();
-    void rollbackTransaction();
+    void beginTransactionNonExclusive();
+    void setTransactionSuccessful();
+    void endTransaction();
+
+    boolean yieldIfContendedSafely();
+    boolean yieldIfContendedSafely(long sleepAfterYieldDelay);
 
     boolean inTransaction();
+
 
     @Override
     void close();

@@ -6,12 +6,7 @@ import android.database.sqlite.SQLiteProgram;
 import android.database.sqlite.SQLiteStatement;
 import android.support.annotation.NonNull;
 
-import ru.noties.sqlbuilder.SqlStatementBuilder;
-import ru.noties.sqliteconnection.SqliteConnection;
 import ru.noties.sqliteconnection.SqliteConnectionBase;
-import ru.noties.sqliteconnection.Statement;
-import ru.noties.sqliteconnection.StatementBase;
-import ru.noties.sqliteconnection.StatementBaseBatch;
 import ru.noties.sqliteconnection.StatementInsert;
 import ru.noties.sqliteconnection.StatementQuery;
 import ru.noties.sqliteconnection.StatementUpdate;
@@ -19,7 +14,7 @@ import ru.noties.sqliteconnection.utils.ArrayUtils;
 
 class SqliteConnectionSystem extends SqliteConnectionBase {
 
-    // connection NEVER should close database
+    // connection should NEVER close database
 
     private final SQLiteDatabase mDatabase;
 
@@ -27,9 +22,19 @@ class SqliteConnectionSystem extends SqliteConnectionBase {
         mDatabase = database;
     }
 
+    // All passed objects will be converted to String (via `toString()` method),
+    // except for byte[]. If any array except byte[] will be passed here (as one of the arguments of cause)
+    // runtime exception with illegal cast will be thrown (we do not validate the data and expect
+    // in case of array it always to be byte[])
+    //
+    // Also, it may be a good idea to convert floating numbers to string manually (to avoid confusion and
+    // unexpected results)
     @Override
     public void execute(@NonNull String sql, Object... args) {
 
+        // we have introduced `close` logic, so it's better to fail-fast if
+        // connection is already closed (to detect bugs early) even if
+        // underlying database is still opened
         checkState();
 
         notifyOnExecution(sql, args);
@@ -48,12 +53,12 @@ class SqliteConnectionSystem extends SqliteConnectionBase {
 
     @Override
     public StatementUpdate update(@NonNull String sql) {
-        return new UpdateImpl(sql);
+        return new UpdateImpl(sql, new UpdateFunc());
     }
 
     @Override
     public StatementInsert insert(@NonNull String sql) {
-        return new InsertImpl(sql);
+        return new InsertImpl(sql, new InsertFunc());
     }
 
     @Override
@@ -62,14 +67,28 @@ class SqliteConnectionSystem extends SqliteConnectionBase {
     }
 
     @Override
-    public void commitTransaction() {
+    public void beginTransactionNonExclusive() {
+        mDatabase.beginTransactionNonExclusive();
+    }
+
+    @Override
+    public void setTransactionSuccessful() {
         mDatabase.setTransactionSuccessful();
+    }
+
+    @Override
+    public void endTransaction() {
         mDatabase.endTransaction();
     }
 
     @Override
-    public void rollbackTransaction() {
-        mDatabase.endTransaction();
+    public boolean yieldIfContendedSafely() {
+        return mDatabase.yieldIfContendedSafely();
+    }
+
+    @Override
+    public boolean yieldIfContendedSafely(long sleepAfterYieldDelay) {
+        return mDatabase.yieldIfContendedSafely(sleepAfterYieldDelay);
     }
 
     @Override
@@ -88,19 +107,18 @@ class SqliteConnectionSystem extends SqliteConnectionBase {
         return mDatabase.toString();
     }
 
-    // we be used by private classes
-    private SqliteConnection asConnection() {
-        return this;
-    }
 
     private static <P extends SQLiteProgram> void bindAll(P program, Object[] args) {
 
-        // TODO! NOW! We give ability to bind `byte[]`, so... it will be complete gibberish
-        // if we call byte[].toString()...
+        // there is a hacky way to obtain Object[] mBindArgs from SQLiteProgram
+        // and modify it directly, but it's not 100% that it will be faster than binding strings.
+        // Although we do not accept `bad` types (the types that are not supported by SQLiteDatabase
+        // with the help of overloaded methods that accept only correct types, putting all the
+        // chips on the idea tha private API/fields will be present on all devices and configurations
+        // is a bit odd. And binding arguments as strings is relatively safe (except maybe floating
+        // numbers, we need to specify it in README that it's better to convert floats to strings
+        // manually)
 
-        // todo, there is a way to bind `unsafe` by obtaining mBindArgs array from
-        // SQLiteProgram and assign directly, but let's skip that. It's not 100%
-        // that it will be faster than binding strings
         final int length = ArrayUtils.length(args);
         if (length > 0) {
             Object o;
@@ -111,7 +129,9 @@ class SqliteConnectionSystem extends SqliteConnectionBase {
                 } else {
                     // it's really important to bind byte[] independently
                     // we only support one type of array -> byte[], so it must
-                    // be pretty safe to assume that it can be only byte[]
+                    // be pretty safe to assume that it can be only byte[].
+                    // if by any chance there will be something other than byte[] here,
+                    // we will fail with cast exception (so, no need to validate it here)
                     if (o.getClass().isArray()) {
                         program.bindBlob(i + 1, (byte[]) o);
                     } else {
@@ -122,117 +142,31 @@ class SqliteConnectionSystem extends SqliteConnectionBase {
         }
     }
 
-    private class QueryImpl extends StatementBase<Cursor> implements StatementQuery {
+    private class QueryImpl extends QueryBase {
 
         QueryImpl(String sql) {
             super(sql);
         }
 
         @Override
-        public SqliteConnection getConnection() {
-            return asConnection();
-        }
-
-        @Override
-        public Cursor execute() {
-
-            checkState();
-
-            final SqlStatementBuilder builder = getSqlStatementBuilder();
-            final String sql = builder.sqlStatement();
-            final Object[] args = builder.sqlBindArguments();
-
-            notifyOnExecution(sql, args);
-
+        protected Cursor executeInner(String sql, Object[] args) {
             return mDatabase.rawQuery(sql, ArrayUtils.toStringArray(args));
         }
+    }
+
+    private class UpdateFunc extends BatchFuncUpdateBase {
 
         @Override
-        public Statement<Cursor> bind(String name, byte[] value) {
-            // WE MUST throw as `rawQuery` accepts only String[], and converting
-            // byte[] to string is just non-sense
-            throw new IllegalStateException("Cannot bind `byte[]` (byte array) argument for query statement");
+        protected Integer executeInner(String sql, Object[] args) {
+            return compileStatement(sql, args).executeUpdateDelete();
         }
     }
 
-    private class UpdateImpl extends StatementBaseBatch<Integer> implements StatementUpdate {
-
-        UpdateImpl(String sql) {
-            super(sql);
-        }
+    private class InsertFunc extends BatchFuncInsertBase {
 
         @Override
-        public SqliteConnection getConnection() {
-            return asConnection();
-        }
-
-        @Override
-        public Integer execute() {
-
-            checkState();
-
-            final int out;
-
-            //noinspection unchecked
-            final Batch<Integer, Object> batch = (Batch<Integer, Object>) popBatch();
-            if (batch != null) {
-                int sum = 0;
-                for (Object o: batch.iterable()) {
-                    sum += batch.batchApply().apply(this, o);
-                }
-                out = sum;
-            } else {
-
-                final SqlStatementBuilder builder = getSqlStatementBuilder();
-                final String sql = builder.sqlStatement();
-                final Object[] args = builder.sqlBindArguments();
-
-                notifyOnExecution(sql, args);
-
-                out = compileStatement(sql, args).executeUpdateDelete();
-            }
-
-            return out;
-        }
-    }
-
-    private class InsertImpl extends StatementBaseBatch<Long> implements StatementInsert {
-
-        InsertImpl(String sql) {
-            super(sql);
-        }
-
-        @Override
-        public SqliteConnection getConnection() {
-            return asConnection();
-        }
-
-        @Override
-        public Long execute() {
-
-            checkState();
-
-            final long out;
-
-            //noinspection unchecked
-            final Batch<Long, Object> batch = (Batch<Long, Object>) popBatch();
-            if (batch != null) {
-                long last = -1L;
-                for (Object o: batch.iterable()) {
-                    // so if we are here, and execute is called again -> store the result
-                    last = batch.batchApply().apply(this, o);
-                }
-                out = last;
-            } else {
-                // simple execution
-                final SqlStatementBuilder builder = getSqlStatementBuilder();
-                final String sql = builder.sqlStatement();
-                final Object[] args = builder.sqlBindArguments();
-                notifyOnExecution(sql, args);
-                out = compileStatement(sql, args).executeInsert();
-            }
-
-            return out;
+        protected Long executeInner(String sql, Object[] args) {
+            return compileStatement(sql, args).executeInsert();
         }
     }
 }

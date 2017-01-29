@@ -1,9 +1,14 @@
 package ru.noties.sqliteconnection;
 
+import android.database.Cursor;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.annotation.VisibleForTesting;
 
 import java.util.HashSet;
 import java.util.Set;
+
+import ru.noties.sqlbuilder.SqlStatementBuilder;
 
 public abstract class SqliteConnectionBase implements SqliteConnection {
 
@@ -73,6 +78,82 @@ public abstract class SqliteConnectionBase implements SqliteConnection {
                 "(isClosed: " + mIsClosed +
                 ", database: `" + databaseToString() +
                 "`)";
+    }
 
+    @VisibleForTesting
+    int getStateObserversSize() {
+        return mStateObservers != null ? mStateObservers.size() : 0;
+    }
+
+    protected abstract class QueryBase extends StatementBase<Cursor> implements StatementQuery {
+
+        protected QueryBase(String sql) {
+            super(sql);
+        }
+
+        @Override
+        public Cursor execute() {
+
+            checkState();
+
+            final SqlStatementBuilder builder = getSqlStatementBuilder();
+            final String sql = builder.sqlStatement();
+            final Object[] args = builder.sqlBindArguments();
+
+            notifyOnExecution(sql, args);
+
+            return executeInner(sql, args);
+        }
+
+        @Override
+        public Statement<Cursor> bind(String name, byte[] value) {
+            // WE MUST throw as `rawQuery` accepts only String[], and converting
+            // byte[] to string is just a non-sense
+            throw new IllegalStateException("Cannot bind `byte[]` (byte array) argument for query statement");
+        }
+
+        protected abstract Cursor executeInner(String sql, Object[] args);
+    }
+
+    private abstract class BatchFuncBase<R> implements StatementBatchBase.Func<R> {
+        @Override
+        public R execute(String sql, Object[] args) {
+            checkState();
+            notifyOnExecution(sql, args);
+            return executeInner(sql, args);
+        }
+
+        protected abstract R executeInner(String sql, Object[] args);
+    }
+
+    protected abstract class BatchFuncUpdateBase extends BatchFuncBase<Integer> {
+
+        @Override
+        public Integer combine(@Nullable Integer left, Integer right) {
+            return left == null
+                    ? right
+                    : left + right;
+        }
+    }
+
+    protected abstract class BatchFuncInsertBase extends BatchFuncBase<Long> {
+        @Override
+        public Long combine(@Nullable Long left, Long right) {
+            return right;
+        }
+    }
+
+    protected static class UpdateImpl extends StatementBatchBase<Integer> implements StatementUpdate {
+
+        public UpdateImpl(String sql, Func<Integer> func) {
+            super(sql, func);
+        }
+    }
+
+    protected static class InsertImpl extends StatementBatchBase<Long> implements StatementInsert {
+
+        public InsertImpl(String sql, Func<Long> func) {
+            super(sql, func);
+        }
     }
 }

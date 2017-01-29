@@ -2,15 +2,17 @@ package ru.noties.sqliteconnection;
 
 import android.database.Cursor;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+
+import ru.noties.sqliteconnection.utils.ArrayUtils;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -22,13 +24,8 @@ public abstract class SqliteConnectionTestBase {
 
     // todo! tests:
     //      * connection never closes database ??
-    //      * register/unregister/notifications for StateObserver (not throws whilst iterating /
-    //          allows only one instance of StateObserver, unregister not present doesn't do anything /
-    //          StateObserver receives correct sql and bindArgs, close notifies only once)
-    //      * `query` operation and binding byte[] must throw
     //      * observable
     //      * closingPolicies -> move to dataSource test
-    //      * all operations will notify StateObservers
 
     // MUST return dataSource with ClosePolicyImmediate (others should be tested somewhere else)
     protected abstract SqliteConnection getConnection();
@@ -45,15 +42,18 @@ public abstract class SqliteConnectionTestBase {
     // we won't receive its stacktrace, but instead... we will receive a RuntimeException
     // with bad connection management.
     // if something goes wrong -> try to comment-out/disable this method (@After) first
-    @After
-    public void after() {
-        if (!mConnection.isClosed() || !isDatabaseClosed(mConnection)) {
-            throw new RuntimeException("Bad connection management. Connection is not closed");
-        }
-    }
+//    @After
+//    public void after() {
+//        if (!mConnection.isClosed() || !isDatabaseClosed(mConnection)) {
+//            throw new RuntimeException("Bad connection management. Connection is not closed");
+//        }
+//    }
 
     @Test
     public void methodNameCorrect() {
+
+        // the meaning of this test method is to make sure that `methodName` returns correct method name,
+        // so we can use for each test specific table name (avoid possible collisions)
 
         assertEquals("methodNameCorrect", methodName());
 
@@ -351,7 +351,8 @@ public abstract class SqliteConnectionTestBase {
         }
 
         // after commit nothing should change, we do another check if data is still present
-        mConnection.commitTransaction();
+        mConnection.setTransactionSuccessful();
+        mConnection.endTransaction();
 
         // second check
         {
@@ -407,7 +408,7 @@ public abstract class SqliteConnectionTestBase {
             }
         }
 
-        mConnection.rollbackTransaction();
+        mConnection.endTransaction();
 
         // second check, should fail
         {
@@ -441,7 +442,8 @@ public abstract class SqliteConnectionTestBase {
         assertFalse(mConnection.inTransaction());
         mConnection.beginTransaction();
         assertTrue(mConnection.inTransaction());
-        mConnection.commitTransaction();
+        mConnection.setTransactionSuccessful();
+        mConnection.endTransaction();
         assertFalse(mConnection.inTransaction());
         mConnection.close();
     }
@@ -451,7 +453,7 @@ public abstract class SqliteConnectionTestBase {
         assertFalse(mConnection.inTransaction());
         mConnection.beginTransaction();
         assertTrue(mConnection.inTransaction());
-        mConnection.rollbackTransaction();
+        mConnection.endTransaction();
         assertFalse(mConnection.inTransaction());
         mConnection.close();
     }
@@ -757,28 +759,207 @@ public abstract class SqliteConnectionTestBase {
         mConnection.close();
     }
 
-//    @Test
-//    public void simpleBindIgnoredIfBatchIsPresent() {
-//        // batch has higher priority
-//        throw null;
-//    }
+    @Test
+    public void stateObserverClosedCalledOnce() {
+        final class Observer extends SqliteConnection.StateObserver {
+            private int called;
+            @Override
+            public void onClosed(SqliteConnection connection) {
+                called += 1;
+            }
+        }
+        final Observer observer = new Observer();
+        mConnection.registerStateObserver(observer);
+        mConnection.close();
 
-//
-//    @Test
-//    public void queryStatementBoundNullArgument() {
-//        // should fail as it doesn't make sense to bind NULL arguments
-//        throw null;
-//    }
-//
-//    @Test
-//    public void query() {
-//        throw null;
-//    }
-//
-//    @Test
-//    public void queryWithJoin() {
-//        throw null;
-//    }
+        assertEquals(1, observer.called);
+
+        mConnection.close();
+        mConnection.close();
+
+        assertEquals(1, observer.called);
+
+        mConnection.close();
+    }
+
+    @Test
+    public void queryBindByteArray() {
+
+        try {
+            mConnection.query("select * from table where ba = ?")
+                    .bind("ba", new byte[] { 0, 1, 2 });
+            assertTrue(false);
+        } catch (IllegalStateException e) {
+            assertTrue(true);
+        }
+
+        mConnection.close();
+    }
+
+    @Test
+    public void stateObserverUnregisterOnClose() {
+
+        // should not fail, just unregister
+        assertStateObservers(mConnection, 0);
+
+        mConnection.registerStateObserver(new SqliteConnection.StateObserver() {
+            @Override
+            public void onClosed(SqliteConnection connection) {
+                connection.unregisterStateObserver(this);
+            }
+        });
+
+        // it's a weird thing to do, but still
+        // if we are an instance of base connection, validate the number of observers, else...
+        // well, assert true (we do not enforce connection to be a sibling of it)
+        assertStateObservers(mConnection, 1);
+
+        mConnection.close();
+
+        assertStateObservers(mConnection, 0);
+    }
+
+    @Test
+    public void batchAndBindCombined() {
+
+        // the thing is, the intent was to call `clearBindings` inside BatchApply
+        // but we cannot enforce it. So, actually we can re-use some bindings in batch apply (
+        // kind of shared constants)
+
+        final String table = methodName();
+
+        mConnection.update("create table ${table}(oid integer, name name)")
+                .bind("table", table)
+                .execute();
+
+        final List<String> strings = new ArrayList<>(3);
+        strings.add("first");
+        strings.add("second");
+        strings.add("third");
+
+        mConnection.insert("insert into ${table}(oid, name) values(?{oid}, ?{name})")
+                .bind("table", table)
+                .batch(strings, new BatchApply<Long, String>() {
+                    @Override
+                    public Long apply(Statement<Long> statement, String value) {
+                        // if statement is not cleared of bindings in BatchApply
+                        // please make sure that each call of this methods binds exactly the
+                        // same number of arguments between calls
+                        statement.bind("oid", value.hashCode());
+                        statement.bind("name", value);
+                        return statement.execute();
+                    }
+                })
+                .execute();
+
+        // now, validate all the data
+        final Cursor cursor = mConnection.query("select * from ${table}")
+                .bind("table", table)
+                .execute();
+
+        final int oid = cursor.getColumnIndex("oid");
+        final int name = cursor.getColumnIndex("name");
+
+        long valueOid;
+        String valueName;
+
+        while (cursor.moveToNext()) {
+
+            valueOid = cursor.getLong(oid);
+            valueName = cursor.getString(name);
+
+            assertEquals(valueOid, valueName.hashCode());
+            assertTrue(strings.remove(valueName));
+        }
+
+        assertEquals(0, strings.size());
+
+        cursor.close();
+        mConnection.close();
+    }
+
+    @Test
+    public void stateObserverExecutionNotified() {
+
+        final ValueMutable<String> valueSql = new ValueMutable<>();
+        final ValueMutable<Object[]> valueArgs = new ValueMutable<>();
+
+        mConnection.registerStateObserver(new SqliteConnection.StateObserver() {
+            @Override
+            public void onExecute(SqliteConnection connection, String sql, Object[] bindArgs) {
+                valueSql.set(sql);
+                valueArgs.set(bindArgs);
+            }
+        });
+
+        mConnection.execute("pragma user_version = 1;");
+        assertEquals("pragma user_version = 1;", valueSql.get());
+        assertNullOrEmpty(valueArgs.get());
+
+        valueSql.set(null);
+
+        final String table = methodName();
+
+        mConnection.update("create table ${table}(oid integer);")
+                .bind("table", table)
+                .execute();
+
+        assertEquals("create table " + table + "(oid integer);", valueSql.get());
+        assertNullOrEmpty(valueArgs.get());
+
+        valueSql.set(null);
+
+        mConnection.insert("insert into ${table}(oid) values(?{oid});")
+                .bind("table", table)
+                .bind("oid", 22)
+                .execute();
+
+        assertEquals("insert into " + table + "(oid) values(?);", valueSql.get());
+        assertArrayEquals(new Object[] { 22 }, valueArgs.get());
+
+        valueSql.set(null);
+        valueArgs.set(null);
+
+        mConnection.insert("insert into ${table}(oid) values(?{oid});")
+                .bind("table", table)
+                .batch(new Integer[] { 1, 2, 4 }, new BatchApply<Long, Integer>() {
+                    @Override
+                    public Long apply(Statement<Long> statement, Integer value) {
+                        try {
+                            statement.bind("oid", value);
+                            return statement.execute();
+                        } finally {
+                            assertEquals("insert into " + table + "(oid) values(?);", valueSql.get());
+                            assertArrayEquals(new Object[] { value }, valueArgs.get());
+                        }
+                    }
+                })
+                .execute();
+
+        mConnection.close();
+    }
+
+    @Test
+    public void stateObserverSingle() {
+        final SqliteConnection.StateObserver observer = new SqliteConnection.StateObserver() {};
+        assertStateObservers(mConnection, 0);
+        mConnection.registerStateObserver(observer);
+        assertStateObservers(mConnection, 1);
+        mConnection.registerStateObserver(observer);
+        assertStateObservers(mConnection, 1);
+        mConnection.unregisterStateObserver(observer);
+        assertStateObservers(mConnection, 0);
+        mConnection.close();
+    }
+
+    @Test
+    public void stateObserverUnregisterNotPresent() {
+        assertStateObservers(mConnection, 0);
+        mConnection.unregisterStateObserver(new SqliteConnection.StateObserver() {});
+        assertStateObservers(mConnection, 0);
+        mConnection.close();
+    }
+
 
     private static boolean tableExists(SqliteConnection connection, String table) {
 
@@ -814,5 +995,26 @@ public abstract class SqliteConnectionTestBase {
             break;
         }
         return name;
+    }
+
+    private static void assertStateObservers(SqliteConnection connection, int expected) {
+        if (connection instanceof SqliteConnectionBase) {
+            // NB! Right now DataSource registers it's inner purpose StateObserver
+            // to keep track of opened connection, so we can dispose SQLiteDatabase
+            // when not used. So, we need to add `1` to expected amount if connection is open
+            // and add nothing if connection is already closed. It's a weird thing to do...
+            // But this logic is not public (even the number of observers) and we do not enforce
+            // a connection to be a sibling of base connection
+            final int add = connection.isClosed() ? 0 : 1;
+            assertEquals(expected + add, ((SqliteConnectionBase) connection).getStateObserversSize());
+        }
+    }
+
+    private static void assertNullOrEmpty(Object[] array) {
+        if (ArrayUtils.length(array) == 0) {
+            assertTrue(true);
+        } else {
+            assertTrue("expected null or empty array, received: `" + Arrays.toString(array) + "`", false);
+        }
     }
 }

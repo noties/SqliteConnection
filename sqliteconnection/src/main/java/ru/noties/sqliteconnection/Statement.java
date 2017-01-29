@@ -11,9 +11,10 @@ public interface Statement<R> {
     Statement<R> bind(String name, double value);
     Statement<R> bind(String name, byte[] value);
     Statement<R> bind(String name, String value);
-    Statement<R> clearBindings();
+    void clearBindings();
 
-    SqliteConnection getConnection();
+    // idea: define interface, for example `Completable`
+    // which has `toObservable` and `execute`
 
     Observable<R> toObservable();
 

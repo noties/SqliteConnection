@@ -55,9 +55,8 @@ public abstract class StatementBase<R> implements Statement<R> {
     }
 
     @Override
-    public Statement<R> clearBindings() {
+    public void clearBindings() {
         mSqlStatementBuilder.clearBindings();
-        return this;
     }
 
     protected SqlStatementBuilder getSqlStatementBuilder() {
