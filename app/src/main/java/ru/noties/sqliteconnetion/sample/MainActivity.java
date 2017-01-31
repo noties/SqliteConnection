@@ -118,6 +118,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        Debug.e("#########################################");
+        Debug.e(connection);
+        Debug.e("#########################################");
+
         // okay, let's create a table with `raw` execution command (that returns nothing)
         connection.execute("create table if not exists tbl(oid integer primary key autoincrement, name text, time integer default 0);");
 
@@ -195,6 +199,7 @@ public class MainActivity extends AppCompatActivity {
                 .subscribe(new Subscriber<Cursor>() {
                     @Override
                     public void onCompleted() {
+                        // please note that after you are finished with connection it must be closed
                         connection.close();
                     }
 

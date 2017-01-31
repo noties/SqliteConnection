@@ -25,6 +25,7 @@ public class SqliteDataSource {
 
     private int mOpenCount;
     private Object mDatabase;
+    private SqliteConnection.StateObserver mAdditionalStateObserver;
 
     SqliteDataSource(
             @NonNull Provider provider,
@@ -34,6 +35,16 @@ public class SqliteDataSource {
         mDatabaseProvider = provider;
         mConnectionHandler = connectionHandler;
         mClosePolicy = closePolicy == null ? new ClosePolicyImmediate() : closePolicy;
+    }
+
+    // registers `default` stateObserver for each connection created by this dataSource (useful for logging)
+    // please note, that this observer MUST unregister in `onClosed` method
+    // otherwise connection will be still referenced and kept from gc'ing
+    public SqliteDataSource registerDefaultStateObserver(@NonNull SqliteConnection.StateObserver observer) {
+        synchronized (mLock) {
+            mAdditionalStateObserver = observer;
+            return this;
+        }
     }
 
     public SqliteConnection open() {
@@ -48,6 +59,9 @@ public class SqliteDataSource {
             //noinspection unchecked
             final SqliteConnection connection = mConnectionHandler.open(mDatabase);
             connection.registerStateObserver(mCloseObserver);
+            if (mAdditionalStateObserver != null) {
+                connection.registerStateObserver(mAdditionalStateObserver);
+            }
             return connection;
         }
     }

@@ -5,6 +5,7 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.VisibleForTesting;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -60,7 +61,7 @@ public abstract class SqliteConnectionBase implements SqliteConnection {
     protected void notifyOnClosed() {
         if (mStateObservers != null && mStateObservers.size() > 0) {
             // in order to give ability to remove self (StateObserver) whilst iterating over collection
-            for (StateObserver observer: new HashSet<>(mStateObservers)) {
+            for (StateObserver observer: new ArrayList<>(mStateObservers)) {
                 observer.onClosed(this);
             }
         }
@@ -69,7 +70,7 @@ public abstract class SqliteConnectionBase implements SqliteConnection {
     protected void notifyOnExecution(String sql, Object[] args) {
         if (mStateObservers != null && mStateObservers.size() > 0) {
             // in order to give ability to remove self (StateObserver) whilst iterating over collection
-            for (StateObserver observer: new HashSet<>(mStateObservers)) {
+            for (StateObserver observer: new ArrayList<>(mStateObservers)) {
                 observer.onExecute(this, sql, args);
             }
         }
