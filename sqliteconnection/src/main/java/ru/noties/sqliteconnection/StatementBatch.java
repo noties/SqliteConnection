@@ -2,34 +2,36 @@ package ru.noties.sqliteconnection;
 
 import android.support.annotation.NonNull;
 
-public interface StatementBatch<R> extends Statement<R> {
+public interface StatementBatch<T> extends Statement<T> {
 
-    <T> StatementBatch<R> batch(@NonNull Iterable<T> iterable, @NonNull BatchApply<R, T> batchApply);
-    <T> StatementBatch<R> batch(@NonNull T[] array, @NonNull BatchApply<R, T> batchApply);
+    <R> StatementBatch<T> batch(@NonNull Iterable<R> iterable, @NonNull BatchApply<T, R> batchApply);
+    <R> StatementBatch<T> batch(@NonNull R[] array, @NonNull BatchApply<T, R> batchApply);
 
     // if not cleared the batch will be kept
+    // but it doesn't check if we are currently iterating over it
+    // So, we need to specify
     void clearBatch();
 
 
     // these are overridden to give ability to combine `batch` and `bind` methods
     @Override
-    StatementBatch<R> bind(String name, boolean value);
+    StatementBatch<T> bind(String name, boolean value);
 
     @Override
-    StatementBatch<R> bind(String name, int value);
+    StatementBatch<T> bind(String name, int value);
 
     @Override
-    StatementBatch<R> bind(String name, long value);
+    StatementBatch<T> bind(String name, long value);
 
     @Override
-    StatementBatch<R> bind(String name, float value);
+    StatementBatch<T> bind(String name, float value);
 
     @Override
-    StatementBatch<R> bind(String name, double value);
+    StatementBatch<T> bind(String name, double value);
 
     @Override
-    StatementBatch<R> bind(String name, byte[] value);
+    StatementBatch<T> bind(String name, byte[] value);
 
     @Override
-    StatementBatch<R> bind(String name, String value);
+    StatementBatch<T> bind(String name, String value);
 }

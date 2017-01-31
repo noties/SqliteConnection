@@ -6,10 +6,10 @@ import android.database.sqlite.SQLiteProgram;
 import android.database.sqlite.SQLiteStatement;
 import android.support.annotation.NonNull;
 
-import ru.noties.sqliteconnection.SqliteConnectionBase;
 import ru.noties.sqliteconnection.StatementInsert;
 import ru.noties.sqliteconnection.StatementQuery;
 import ru.noties.sqliteconnection.StatementUpdate;
+import ru.noties.sqliteconnection.base.SqliteConnectionBase;
 import ru.noties.sqliteconnection.utils.ArrayUtils;
 
 class SqliteConnectionSystem extends SqliteConnectionBase {

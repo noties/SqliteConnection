@@ -32,4 +32,6 @@ android {
 dependencies {
     compile "com.android.support:appcompat-v7:${SUPPORT_VERSION}"
     compile 'ru.noties:debug:2.0.2@jar'
+    compile project(':sqliteconnection')
+    compile "io.reactivex:rxjava:${RX_JAVA_VERSION}"
 }

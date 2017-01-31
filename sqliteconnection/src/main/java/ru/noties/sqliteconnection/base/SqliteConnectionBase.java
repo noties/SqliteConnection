@@ -1,4 +1,4 @@
-package ru.noties.sqliteconnection;
+package ru.noties.sqliteconnection.base;
 
 import android.database.Cursor;
 import android.support.annotation.NonNull;
@@ -9,6 +9,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 import ru.noties.sqlbuilder.SqlStatementBuilder;
+import ru.noties.sqliteconnection.SqliteConnection;
+import ru.noties.sqliteconnection.StatementInsert;
+import ru.noties.sqliteconnection.StatementQuery;
+import ru.noties.sqliteconnection.StatementQueryMap;
+import ru.noties.sqliteconnection.StatementUpdate;
 
 public abstract class SqliteConnectionBase implements SqliteConnection {
 
@@ -81,11 +86,11 @@ public abstract class SqliteConnectionBase implements SqliteConnection {
     }
 
     @VisibleForTesting
-    int getStateObserversSize() {
+    public int getStateObserversSize() {
         return mStateObservers != null ? mStateObservers.size() : 0;
     }
 
-    protected abstract class QueryBase extends StatementBase<Cursor> implements StatementQuery {
+    protected abstract class QueryBase extends StatementQueryBase {
 
         protected QueryBase(String sql) {
             super(sql);
@@ -106,7 +111,12 @@ public abstract class SqliteConnectionBase implements SqliteConnection {
         }
 
         @Override
-        public Statement<Cursor> bind(String name, byte[] value) {
+        public <T> StatementQueryMap<T> map(@NonNull RowMapper<T> mapper) {
+            return new StatementQueryMapImpl<>(this, mapper);
+        }
+
+        @Override
+        public StatementQuery bind(String name, byte[] value) {
             // WE MUST throw as `rawQuery` accepts only String[], and converting
             // byte[] to string is just a non-sense
             throw new IllegalStateException("Cannot bind `byte[]` (byte array) argument for query statement");
@@ -115,15 +125,15 @@ public abstract class SqliteConnectionBase implements SqliteConnection {
         protected abstract Cursor executeInner(String sql, Object[] args);
     }
 
-    private abstract class BatchFuncBase<R> implements StatementBatchBase.Func<R> {
+    private abstract class BatchFuncBase<T> implements StatementBatchBase.Func<T> {
         @Override
-        public R execute(String sql, Object[] args) {
+        public T execute(String sql, Object[] args) {
             checkState();
             notifyOnExecution(sql, args);
             return executeInner(sql, args);
         }
 
-        protected abstract R executeInner(String sql, Object[] args);
+        protected abstract T executeInner(String sql, Object[] args);
     }
 
     protected abstract class BatchFuncUpdateBase extends BatchFuncBase<Integer> {

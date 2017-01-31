@@ -2,6 +2,7 @@ package ru.noties.sqliteconnection;
 
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.annotation.VisibleForTesting;
 
 import ru.noties.sqliteconnection.utils.Provider;
 
@@ -52,8 +53,8 @@ public class SqliteDataSource {
     }
 
     // PLEASE note that this method is not intended to be used by anyone except ClosePolicy
-    // method is public to give ability to create own ClosePolicies
-    public void close() {
+    // if a ClosePolicy needs to close this DataSource - use ClosePolicyHelper.close
+    void close() {
         synchronized (mLock) {
             if (mOpenCount == 1) {
                 if (mClosePolicy.onLastConnectionClose(this)) {

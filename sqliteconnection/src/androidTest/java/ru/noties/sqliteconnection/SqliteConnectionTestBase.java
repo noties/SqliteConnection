@@ -2,6 +2,7 @@ package ru.noties.sqliteconnection;
 
 import android.database.Cursor;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -12,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import ru.noties.sqliteconnection.base.SqliteConnectionBase;
 import ru.noties.sqliteconnection.utils.ArrayUtils;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -42,12 +44,12 @@ public abstract class SqliteConnectionTestBase {
     // we won't receive its stacktrace, but instead... we will receive a RuntimeException
     // with bad connection management.
     // if something goes wrong -> try to comment-out/disable this method (@After) first
-//    @After
-//    public void after() {
-//        if (!mConnection.isClosed() || !isDatabaseClosed(mConnection)) {
-//            throw new RuntimeException("Bad connection management. Connection is not closed");
-//        }
-//    }
+    @After
+    public void after() {
+        if (!mConnection.isClosed() || !isDatabaseClosed(mConnection)) {
+            throw new RuntimeException("Bad connection management. Connection is not closed");
+        }
+    }
 
     @Test
     public void methodNameCorrect() {
@@ -960,6 +962,160 @@ public abstract class SqliteConnectionTestBase {
         mConnection.close();
     }
 
+    @Test
+    public void insertBatchStoreId() {
+
+        final class Data {
+
+            long id;
+            String name;
+
+            Data(String name) {
+                this.name = name;
+            }
+        }
+
+        final List<Data> list = new ArrayList<Data>() {{
+            add(new Data("first"));
+            add(new Data("second"));
+            add(new Data("third"));
+        }};
+
+        final String table = methodName();
+        mConnection.update("create table ${table}(oid integer primary key autoincrement, name text);")
+                .bind("table", table)
+                .execute();
+
+        mConnection.insert("insert into ${table}(name) values(?{name})")
+                .bind("table", table)
+                .batch(list, new BatchApply<Long, Data>() {
+                    @Override
+                    public Long apply(Statement<Long> statement, Data value) {
+                        statement.bind("name", value.name);
+                        final long id = statement.execute();
+                        value.id = id;
+                        return id;
+                    }
+                })
+                .execute();
+
+        for (Data data: list) {
+            assertTrue(data.id > 0L);
+        }
+
+        final Cursor cursor = mConnection.query("select * from ${table}")
+                .bind("table", table)
+                .execute();
+        try {
+            assertEquals(3, cursor.getCount());
+        } finally {
+            cursor.close();
+        }
+
+        mConnection.close();
+    }
+
+    @Test
+    public void rowMapperList() {
+
+        final String table = methodName();
+        mConnection.update("create table ${table}(oid integer primary key autoincrement, name text, magic_number integer);")
+                .bind("table", table)
+                .execute();
+
+
+        final class Data {
+
+            String name;
+            int magicNumber;
+            Data(String name, int magicNumber) {
+                this.name = name;
+                this.magicNumber = magicNumber;
+            }
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (o == null || getClass() != o.getClass()) return false;
+                Data data = (Data) o;
+                if (magicNumber != data.magicNumber) return false;
+                return name != null ? name.equals(data.name) : data.name == null;
+            }
+            public int hashCode() {
+                int result = name != null ? name.hashCode() : 0;
+                result = 31 * result + magicNumber;
+                return result;
+            }
+        }
+
+        final List<Data> list = new ArrayList<Data>(3) {{
+            add(new Data("first", 74));
+            add(new Data("second", 91));
+            add(new Data("third", Integer.MAX_VALUE));
+        }};
+
+        mConnection.insert("insert into ${table}(name, magic_number) values(?{name}, ?{magicNumber})")
+                .bind("table", table)
+                .batch(list, new BatchApply<Long, Data>() {
+                    @Override
+                    public Long apply(Statement<Long> statement, Data value) {
+                        statement.bind("name", value.name);
+                        statement.bind("magicNumber", value.magicNumber);
+                        return statement.execute();
+                    }
+                })
+                .execute();
+
+        final List<Data> fromDb = mConnection.query("select * from ${table}")
+                .bind("table", table)
+                .map(new StatementQuery.RowMapper<Data>() {
+                    @Override
+                    public Data map(Cursor cursor) {
+                        return new Data(cursor.getString(1), cursor.getInt(2));
+                    }
+                })
+                .asList()
+                .execute();
+
+        assertEquals(3, fromDb.size());
+
+        for (Data data: list) {
+            assertTrue(fromDb.remove(data));
+        }
+
+        assertEquals(0, fromDb.size());
+
+        mConnection.close();
+    }
+
+    @Test
+    public void rowMapperSingle() {
+
+        final String table = methodName();
+
+        mConnection.update("create table ${table}(oid integer primary key autoincrement, name text)")
+                .bind("table", table)
+                .execute();
+
+        final String name = "12412qwqwr87613";
+
+        mConnection.insert("insert into ${table}(name) values(?{name});")
+                .bind("table", table)
+                .bind("name", name)
+                .execute();
+
+        final String fromDb = mConnection.query("select name from ${table} limit 1;")
+                .bind("table", table)
+                .map(new StatementQuery.RowMapper<String>() {
+                    @Override
+                    public String map(Cursor cursor) {
+                        return cursor.getString(0);
+                    }
+                })
+                .execute();
+
+        assertEquals(name, fromDb);
+
+        mConnection.close();
+    }
 
     private static boolean tableExists(SqliteConnection connection, String table) {
 

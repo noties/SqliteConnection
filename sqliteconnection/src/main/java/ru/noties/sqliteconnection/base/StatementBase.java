@@ -1,10 +1,12 @@
-package ru.noties.sqliteconnection;
+package ru.noties.sqliteconnection.base;
 
 import ru.noties.sqlbuilder.SqlStatementBuilder;
+import ru.noties.sqliteconnection.Statement;
 import rx.Observable;
 import rx.functions.Func0;
 
-public abstract class StatementBase<R> implements Statement<R> {
+@SuppressWarnings("WeakerAccess")
+public abstract class StatementBase<T> implements Statement<T> {
 
     private final SqlStatementBuilder mSqlStatementBuilder;
 
@@ -13,43 +15,43 @@ public abstract class StatementBase<R> implements Statement<R> {
     }
 
     @Override
-    public Statement<R> bind(String name, boolean value) {
+    public Statement<T> bind(String name, boolean value) {
         mSqlStatementBuilder.bind(name, value ? 1 : 0);
         return this;
     }
 
     @Override
-    public Statement<R> bind(String name, int value) {
+    public Statement<T> bind(String name, int value) {
         mSqlStatementBuilder.bind(name, value);
         return this;
     }
 
     @Override
-    public Statement<R> bind(String name, long value) {
+    public Statement<T> bind(String name, long value) {
         mSqlStatementBuilder.bind(name, value);
         return this;
     }
 
     @Override
-    public Statement<R> bind(String name, float value) {
+    public Statement<T> bind(String name, float value) {
         mSqlStatementBuilder.bind(name, value);
         return this;
     }
 
     @Override
-    public Statement<R> bind(String name, double value) {
+    public Statement<T> bind(String name, double value) {
         mSqlStatementBuilder.bind(name, value);
         return this;
     }
 
     @Override
-    public Statement<R> bind(String name, byte[] value) {
+    public Statement<T> bind(String name, byte[] value) {
         mSqlStatementBuilder.bind(name, value);
         return this;
     }
 
     @Override
-    public Statement<R> bind(String name, String value) {
+    public Statement<T> bind(String name, String value) {
         mSqlStatementBuilder.bind(name, value);
         return this;
     }
@@ -64,10 +66,10 @@ public abstract class StatementBase<R> implements Statement<R> {
     }
 
     @Override
-    public Observable<R> toObservable() {
-        return Observable.defer(new Func0<Observable<R>>() {
+    public Observable<T> toObservable() {
+        return Observable.defer(new Func0<Observable<T>>() {
             @Override
-            public Observable<R> call() {
+            public Observable<T> call() {
                 return Observable.just(execute());
             }
         });

@@ -1,34 +1,37 @@
-package ru.noties.sqliteconnection;
+package ru.noties.sqliteconnection.base;
 
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
 import ru.noties.sqlbuilder.SqlStatementBuilder;
+import ru.noties.sqliteconnection.BatchApply;
+import ru.noties.sqliteconnection.StatementBatch;
 import ru.noties.sqliteconnection.utils.ArrayUtils;
 
-public abstract class StatementBatchBase<R> extends StatementBase<R> implements StatementBatch<R> {
+@SuppressWarnings("WeakerAccess")
+public abstract class StatementBatchBase<T> extends StatementBase<T> implements StatementBatch<T> {
 
-    public interface Func<R> {
-        R combine(@Nullable R left, R right);
-        R execute(String sql, Object[] args);
+    public interface Func<T> {
+        T combine(@Nullable T left, T right);
+        T execute(String sql, Object[] args);
     }
 
-    private final Func<R> mFunc;
-    private Batch<R, ?> mBatch;
+    private final Func<T> mFunc;
+    private Batch<T, ?> mBatch;
 
-    protected StatementBatchBase(String sql, Func<R> func) {
+    protected StatementBatchBase(String sql, Func<T> func) {
         super(sql);
         mFunc = func;
     }
 
     @Override
-    public <T> StatementBatch<R> batch(@NonNull Iterable<T> iterable, @NonNull BatchApply<R, T> batchApply) {
+    public <R> StatementBatch<T> batch(@NonNull Iterable<R> iterable, @NonNull BatchApply<T, R> batchApply) {
         mBatch = new Batch<>(iterable, batchApply);
         return this;
     }
 
     @Override
-    public <T> StatementBatch<R> batch(@NonNull T[] array, @NonNull BatchApply<R, T> batchApply) {
+    public <R> StatementBatch<T> batch(@NonNull R[] array, @NonNull BatchApply<T, R> batchApply) {
         mBatch = new Batch<>(ArrayUtils.toIterable(array), batchApply);
         return this;
     }
@@ -40,9 +43,9 @@ public abstract class StatementBatchBase<R> extends StatementBase<R> implements 
     }
 
     @Override
-    public R execute() {
+    public T execute() {
 
-        final R out;
+        final T out;
 
         // so, we will remove locally stored batch instance if present
         // in order to execute it `normally` and after iteration is done
@@ -50,11 +53,11 @@ public abstract class StatementBatchBase<R> extends StatementBase<R> implements 
         // batch is cleared by another batch or when `clearBindings` is called
 
         //noinspection unchecked
-        final Batch<R, Object> batch = (Batch<R, Object>) mBatch;
+        final Batch<T, Object> batch = (Batch<T, Object>) mBatch;
         mBatch = null;
 
         if (batch != null) {
-            R inner = null;
+            T inner = null;
             for (Object o: batch.mIterable) {
                 inner = mFunc.combine(inner, batch.mBatchApply.apply(this, o));
             }
@@ -69,38 +72,38 @@ public abstract class StatementBatchBase<R> extends StatementBase<R> implements 
     }
 
     @Override
-    public StatementBatch<R> bind(String name, boolean value) {
-        return (StatementBatch<R>) super.bind(name, value);
+    public StatementBatch<T> bind(String name, boolean value) {
+        return (StatementBatch<T>) super.bind(name, value);
     }
 
     @Override
-    public StatementBatch<R> bind(String name, int value) {
-        return (StatementBatch<R>) super.bind(name, value);
+    public StatementBatch<T> bind(String name, int value) {
+        return (StatementBatch<T>) super.bind(name, value);
     }
 
     @Override
-    public StatementBatch<R> bind(String name, long value) {
-        return (StatementBatch<R>) super.bind(name, value);
+    public StatementBatch<T> bind(String name, long value) {
+        return (StatementBatch<T>) super.bind(name, value);
     }
 
     @Override
-    public StatementBatch<R> bind(String name, float value) {
-        return (StatementBatch<R>) super.bind(name, value);
+    public StatementBatch<T> bind(String name, float value) {
+        return (StatementBatch<T>) super.bind(name, value);
     }
 
     @Override
-    public StatementBatch<R> bind(String name, double value) {
-        return (StatementBatch<R>) super.bind(name, value);
+    public StatementBatch<T> bind(String name, double value) {
+        return (StatementBatch<T>) super.bind(name, value);
     }
 
     @Override
-    public StatementBatch<R> bind(String name, byte[] value) {
-        return (StatementBatch<R>) super.bind(name, value);
+    public StatementBatch<T> bind(String name, byte[] value) {
+        return (StatementBatch<T>) super.bind(name, value);
     }
 
     @Override
-    public StatementBatch<R> bind(String name, String value) {
-        return (StatementBatch<R>) super.bind(name, value);
+    public StatementBatch<T> bind(String name, String value) {
+        return (StatementBatch<T>) super.bind(name, value);
     }
 
     // todo, what can we do here:
